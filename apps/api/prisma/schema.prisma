@@ -1,0 +1,215 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String?
+  name          String?
+  role          UserRole @default(AGENT)
+  provider      AuthProvider @default(LOCAL)
+  providerId    String?  @unique
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  customers     Customer[]
+  supportTickets SupportTicket[] @relation("TicketAssignee")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  AGENT
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  GITHUB
+}
+
+model Supplier {
+  id           String          @id @default(cuid())
+  name         String
+  marketplace  Marketplace
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  imports      SupplierImport[]
+  products     Product[]
+
+  @@unique([name, marketplace], name: "name_marketplace")
+}
+
+enum Marketplace {
+  AMAZON
+  EBAY
+  ALIEXPRESS
+  ONBUY
+}
+
+model SupplierImport {
+  id           String      @id @default(cuid())
+  supplier     Supplier    @relation(fields: [supplierId], references: [id])
+  supplierId   String
+  status       ImportStatus @default(PENDING)
+  payload      Json
+  createdAt    DateTime    @default(now())
+  completedAt  DateTime?
+  draftProducts DraftProduct[]
+}
+
+enum ImportStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+model DraftProduct {
+  id            String         @id @default(cuid())
+  title         String
+  cost          Float
+  price         Float
+  status        DraftStatus    @default(REVIEW)
+  import        SupplierImport @relation(fields: [importId], references: [id])
+  importId      String
+  assignedTo    User?          @relation(fields: [assignedToId], references: [id])
+  assignedToId  String?
+  product       Product?
+  createdAt     DateTime       @default(now())
+}
+
+enum DraftStatus {
+  REVIEW
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+}
+
+model Product {
+  id            String      @id @default(cuid())
+  sku           String      @unique
+  title         String
+  description   String?
+  price         Float
+  stock         Int         @default(0)
+  status        ProductStatus @default(DRAFT)
+  draft         DraftProduct?
+  supplier      Supplier?   @relation(fields: [supplierId], references: [id])
+  supplierId    String?
+  orders        OrderItem[]
+  marketplaceListings MarketplaceListing[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+enum ProductStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  RETIRED
+}
+
+model MarketplaceListing {
+  id            String       @id @default(cuid())
+  product       Product      @relation(fields: [productId], references: [id])
+  productId     String
+  marketplace   Marketplace
+  marketplaceSku String
+  status        ListingStatus @default(PENDING)
+  lastSyncedAt  DateTime?
+}
+
+enum ListingStatus {
+  PENDING
+  SYNCED
+  ERROR
+}
+
+model Order {
+  id            String      @id @default(cuid())
+  orderNumber   String      @unique
+  customer      Customer    @relation(fields: [customerId], references: [id])
+  customerId    String
+  channel       Marketplace
+  total         Float
+  fulfillment   FulfillmentStatus @default(PENDING)
+  placedAt      DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  items         OrderItem[]
+  tracking      TrackingEvent[]
+  supportTickets SupportTicket[]
+}
+
+enum FulfillmentStatus {
+  PENDING
+  IN_PROGRESS
+  FULFILLED
+  ISSUE
+}
+
+model OrderItem {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  product   Product  @relation(fields: [productId], references: [id])
+  productId String
+  quantity  Int
+  price     Float
+}
+
+model TrackingEvent {
+  id        String   @id @default(cuid())
+  order     Order    @relation(fields: [orderId], references: [id])
+  orderId   String
+  status    String
+  occurredAt DateTime @default(now())
+  metadata  Json?
+}
+
+model Customer {
+  id            String      @id @default(cuid())
+  name          String
+  email         String      @unique
+  phone         String?
+  lifetimeValue Float        @default(0)
+  owner         User?       @relation(fields: [ownerId], references: [id])
+  ownerId       String?
+  orders        Order[]
+  supportTickets SupportTicket[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+}
+
+model SupportTicket {
+  id           String       @id @default(cuid())
+  subject      String
+  status       TicketStatus @default(OPEN)
+  priority     TicketPriority @default(MEDIUM)
+  order        Order?       @relation(fields: [orderId], references: [id])
+  orderId      String?
+  customer     Customer     @relation(fields: [customerId], references: [id])
+  customerId   String
+  assignee     User?        @relation("TicketAssignee", fields: [assigneeId], references: [id])
+  assigneeId   String?
+  notes        Json?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+enum TicketStatus {
+  OPEN
+  WAITING
+  RESOLVED
+}
+
+enum TicketPriority {
+  LOW
+  MEDIUM
+  HIGH
+}
